@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Ralph runtime
+archive/
+
+# Persona corpus (large, downloaded/derived)
+/data/
+
+# scratch test scripts
+scripts/_*.ts
+
+# Serena (LSP index cache + local overrides); project.yml/memories are committed
+.serena/cache/
+.serena/project.local.yml
+.playwright-mcp/
+
+# Tauri build outputs + vendored Node runtime (downloaded, not source)
+src-tauri/target/
+src-tauri/binaries/
+vendor/
+
+# Extracted Node source tree used to build the small-icu runtime
+vendor/node-v*/

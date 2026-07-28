@@ -1,0 +1,20 @@
+[package]
+name = "loop-studio"
+version = "0.1.0"
+description = "Loop Studio — 설문 설계·검토·시뮬레이션 로컬 도구"
+edition = "2021"
+rust-version = "1.77.2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+panic = "abort"
+strip = true
