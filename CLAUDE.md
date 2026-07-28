@@ -5,7 +5,7 @@
 설문을 **설계 → 검토 → 미리보기 → 합성 시뮬레이션**하는 로컬 단일 사용자 도구.
 응답 수집은 하지 않는다 — 문항이 실제로 어떻게 작동할지를 배포 전에 확인하는 것이 목적이다.
 
-방향 전환의 배경과 결정 기록: [tasks/prd-local-desktop-app.md](tasks/prd-local-desktop-app.md).
+방향 전환의 배경과 결정 기록: [docs/design-notes.md](docs/design-notes.md).
 사용자 가이드: [docs/user-guide.md](docs/user-guide.md).
 
 ## Stack

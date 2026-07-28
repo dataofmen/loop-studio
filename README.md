@@ -13,12 +13,16 @@
 
 ## 설치 (앱)
 
-1. AI CLI 중 하나를 설치하고 로그인합니다.
+**[최신 버전 내려받기 →](https://github.com/dataofmen/loop-studio/releases/latest)**
+(macOS 11+ · Apple Silicon)
+
+1. AI CLI 중 하나를 설치하고 로그인합니다. 설계·검토·시뮬레이션이 전부 이 CLI를 통해
+   실행되므로 이게 없으면 앱이 할 수 있는 일이 없습니다.
    ```bash
    npm i -g @anthropic-ai/claude-code     # 또는
    curl https://cursor.com/install -fsS | bash
    ```
-2. `Loop Studio_0.1.0_aarch64.dmg`(35MB)를 열어 앱을 Applications로 끌어다 놓습니다.
+2. 내려받은 `.dmg`(35MB)를 열어 앱을 Applications로 끌어다 놓습니다.
 3. **처음 한 번은 우클릭 → 열기**로 실행합니다 (코드 서명이 없어 더블클릭하면
    Gatekeeper가 막습니다). 이후로는 더블클릭으로 열립니다.
 
