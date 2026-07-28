@@ -14,7 +14,10 @@
 ## 설치 (앱)
 
 **[최신 버전 내려받기 →](https://github.com/dataofmen/loop-studio/releases/latest)**
-(macOS 11+ · Apple Silicon)
+
+> ⚠️ **Apple Silicon(M1 이상) 전용입니다. Intel Mac에서는 실행되지 않습니다.**
+> 애플 메뉴  → `이 Mac에 관하여`의 칩 항목이 **Apple M1/M2/M3/M4** 인지 확인하세요.
+> macOS 11 이상 필요.
 
 1. AI CLI 중 하나를 설치하고 로그인합니다. 설계·검토·시뮬레이션이 전부 이 CLI를 통해
    실행되므로 이게 없으면 앱이 할 수 있는 일이 없습니다.
