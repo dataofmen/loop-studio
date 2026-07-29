@@ -119,6 +119,18 @@ cpSync(
   { recursive: true },
 );
 
+// Redistributing the Node binary means carrying its notice: MIT requires the
+// copyright notice to accompany the distribution, and the packaged .app is a
+// distribution. Our own terms and the rest of the attributions ride along.
+mkdirSync(join(out, "licenses"), { recursive: true });
+cpSync(
+  join(root, "src-tauri/licenses/NODEJS-LICENSE.txt"),
+  join(out, "licenses/NODEJS-LICENSE.txt"),
+);
+for (const f of ["LICENSE", "NOTICE.md"]) {
+  if (existsSync(join(root, f))) cpSync(join(root, f), join(out, "licenses", f));
+}
+
 // An optional persona corpus is a drop-in: put personas.db in data/ and the
 // app switches from invented personas to corpus sampling on next start.
 if (existsSync(join(root, "data"))) {

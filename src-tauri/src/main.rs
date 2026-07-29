@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
@@ -87,72 +88,115 @@ impl ServerEnv {
     }
 }
 
+/// Migrates, starts the server, waits for it, then opens the window.
+///
+/// Runs off the main thread — see the note in `setup`.
+fn start_backend(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let resource_dir = handle.path().resource_dir()?;
+    let app_dir = resource_dir.join("app");
+    let data_dir = handle.path().app_data_dir()?;
+    std::fs::create_dir_all(&data_dir)?;
+
+    let home = handle
+        .path()
+        .home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let env = ServerEnv {
+        app_dir: app_dir.clone(),
+        data_dir,
+        port: free_port(),
+        path: augmented_path(&home),
+    };
+    let vars: std::collections::HashMap<_, _> = env.vars().into_iter().collect();
+
+    // 1. Migrate, and wait for it to finish before anything opens the database
+    //    for serving (PGlite allows a single connection).
+    let migrate = tauri::async_runtime::block_on(
+        handle
+            .shell()
+            .sidecar("node")?
+            .args([app_dir.join("scripts/db-migrate.mjs").to_string_lossy().to_string()])
+            .envs(vars.clone())
+            .output(),
+    )?;
+    if !migrate.status.success() {
+        return Err(format!(
+            "데이터베이스 준비에 실패했습니다: {}",
+            String::from_utf8_lossy(&migrate.stderr)
+        )
+        .into());
+    }
+
+    // 2. Serve.
+    let (_rx, child) = handle
+        .shell()
+        .sidecar("node")?
+        .args([app_dir.join("server.js").to_string_lossy().to_string()])
+        .envs(vars)
+        .spawn()?;
+    handle.manage(ServerHandle(Arc::new(Mutex::new(Some(child)))));
+
+    // 3. Wait for the port, then open the window.
+    let started = Instant::now();
+    while !port_answers(env.port) {
+        if started.elapsed() > READY_TIMEOUT {
+            return Err("서버가 제한 시간 안에 시작되지 않았습니다.".into());
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+
+    let url = format!("http://127.0.0.1:{}/dashboard", env.port);
+    WebviewWindowBuilder::new(handle, "main", WebviewUrl::External(url.parse()?))
+        .title("Loop Studio")
+        .inner_size(1280.0, 860.0)
+        .min_inner_size(900.0, 600.0)
+        .build()?;
+
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
+        // One instance per machine. Without this, opening the app while it is
+        // already running spawns a second process that can never get anywhere:
+        // the data directory is already claimed (see src/db/lock.ts), so its
+        // server never comes up and it sits there with no window — which reads
+        // as "the app is broken". Re-launching now just focuses what's open.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            let resource_dir = app.path().resource_dir()?;
-            let app_dir = resource_dir.join("app");
-            let data_dir = app.path().app_data_dir()?;
-            std::fs::create_dir_all(&data_dir)?;
+            let handle = app.handle().clone();
 
-            let home = app
-                .path()
-                .home_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_default();
-
-            let env = ServerEnv {
-                app_dir: app_dir.clone(),
-                data_dir,
-                port: free_port(),
-                path: augmented_path(&home),
-            };
-
-            // 1. Migrate, and wait for it to finish before anything opens the
-            //    database for serving.
-            // `output()` is async; setup is not. Blocking here is fine — the
-            // window doesn't exist yet and we're going to wait for the server
-            // regardless.
-            let migrate = tauri::async_runtime::block_on(
-                app.shell()
-                    .sidecar("node")?
-                    .args([app_dir.join("scripts/db-migrate.mjs").to_string_lossy().to_string()])
-                    .envs(env.vars().into_iter().collect::<std::collections::HashMap<_, _>>())
-                    .output(),
-            )?;
-            if !migrate.status.success() {
-                return Err(format!(
-                    "데이터베이스 준비에 실패했습니다: {}",
-                    String::from_utf8_lossy(&migrate.stderr)
-                )
-                .into());
-            }
-
-            // 2. Serve.
-            let (_rx, child) = app
-                .shell()
-                .sidecar("node")?
-                .args([app_dir.join("server.js").to_string_lossy().to_string()])
-                .envs(env.vars().into_iter().collect::<std::collections::HashMap<_, _>>())
-                .spawn()?;
-            app.manage(ServerHandle(Arc::new(Mutex::new(Some(child)))));
-
-            // 3. Wait for the port, then show the window.
-            let started = Instant::now();
-            while !port_answers(env.port) {
-                if started.elapsed() > READY_TIMEOUT {
-                    return Err("서버가 제한 시간 안에 시작되지 않았습니다.".into());
+            // Everything slow happens on a worker thread.
+            //
+            // The first version did this inline: migrate, start the server,
+            // then sleep-poll the port before building the window. That blocks
+            // the main thread through setup, so the event loop never starts
+            // pumping — and on a loaded machine the app ended up with WebKit
+            // children but no window-server connection at all (cgsConnection
+            // NULL, zero windows). Keep setup instant; report progress by
+            // opening the window and letting it load when the server answers.
+            std::thread::spawn(move || {
+                if let Err(e) = start_backend(&handle) {
+                    eprintln!("[loop-studio] 백엔드 기동 실패: {e}");
+                    // Surface it instead of sitting there windowless.
+                    handle.dialog()
+                        .message(format!("앱을 시작할 수 없습니다.\n\n{e}"))
+                        .kind(MessageDialogKind::Error)
+                        .title("Loop Studio")
+                        .blocking_show();
+                    handle.exit(1);
                 }
-                std::thread::sleep(Duration::from_millis(150));
-            }
-
-            let url = format!("http://127.0.0.1:{}/dashboard", env.port);
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse()?))
-                .title("Loop Studio")
-                .inner_size(1280.0, 860.0)
-                .min_inner_size(900.0, 600.0)
-                .build()?;
+            });
 
             Ok(())
         })

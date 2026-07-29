@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The bundled Node runtime is V8, and V8 needs to map executable memory for
+	  its JIT. Signing with the hardened runtime (which Tauri applies) forbids
+	  that by default, and the failure looks nothing like a permissions problem:
+
+	      Fatal process out of memory: Failed to reserve virtual memory for CodeRange
+
+	  These three entitlements are what make a bundled Node/V8 sidecar runnable
+	  under a hardened-runtime signature.
+	-->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<!-- The shell launches a separate bundled binary (node) as a sidecar. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

@@ -53,7 +53,9 @@ function vendoredNode(): { path: string; built: boolean } {
 
 function missingNodeMessage(): string {
   return [
-    "번들할 Node 런타임이 vendor/에 없습니다. 둘 중 하나를 준비하세요.",
+    `번들할 Node 런타임이 없습니다 (${outDir} 에도, vendor/ 에도).`,
+    "이미 준비한 사이드카가 있으면 그 파일을 위 경로에 두면 그대로 재사용합니다.",
+    "새로 준비하려면 둘 중 하나를 하세요.",
     "",
     "① 작게 (권장, ~34MB 절감) — full ICU를 뺀 소스 빌드:",
     "  cd vendor",
@@ -69,12 +71,39 @@ function missingNodeMessage(): string {
   ].join("\n");
 }
 
+mkdirSync(outDir, { recursive: true });
+const dest = join(outDir, `node-${targetTriple()}`);
+
+/**
+ * A prepared sidecar is reused as-is.
+ *
+ * Producing it costs either a 195MB download or a 20-minute source build, and
+ * the result is a single 58MB file — so once it exists there is no reason to
+ * keep the vendor tree around (a full Node source build leaves ~21GB behind).
+ * Re-run with LOOP_FORCE_SIDECAR=1 to rebuild it from vendor/.
+ */
+if (existsSync(dest) && !process.env.LOOP_FORCE_SIDECAR) {
+  try {
+    const v = execFileSync(
+      dest,
+      [
+        "-e",
+        'require("node:sqlite"); process.stdout.write(process.version + (process.config.variables.icu_small ? " small-icu" : " full-icu"))',
+      ],
+      { encoding: "utf8" },
+    );
+    console.log(`sidecar → ${dest}`);
+    console.log(`  ${v} · 기존 사이드카 재사용 (${(statSync(dest).size / 1024 / 1024).toFixed(0)}MB)`);
+    process.exit(0);
+  } catch {
+    // Present but not runnable — fall through and rebuild it from vendor/.
+    console.log("기존 사이드카가 실행되지 않습니다 — vendor/에서 다시 준비합니다.");
+  }
+}
+
 const picked = vendoredNode();
 const src = resolve(picked.path);
 if (!existsSync(src)) throw new Error(missingNodeMessage());
-
-mkdirSync(outDir, { recursive: true });
-const dest = join(outDir, `node-${targetTriple()}`);
 copyFileSync(src, dest);
 chmodSync(dest, 0o755);
 
