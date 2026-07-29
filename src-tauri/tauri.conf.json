@@ -24,11 +24,9 @@
       "icons/128x128.png",
       "icons/icon.icns"
     ],
-    "externalBin": [
-      "binaries/node"
-    ],
     "resources": {
-      "../dist/app": "app"
+      "../dist/app": "app",
+      "binaries/node-aarch64-apple-darwin": "bin/node"
     },
     "macOS": {
       "minimumSystemVersion": "11.0",

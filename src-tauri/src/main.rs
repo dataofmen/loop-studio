@@ -94,6 +94,24 @@ impl ServerEnv {
 fn start_backend(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let resource_dir = handle.path().resource_dir()?;
     let app_dir = resource_dir.join("app");
+
+    // The Node runtime lives under Resources, NOT Contents/MacOS.
+    //
+    // Tauri's `externalBin` sidecar mechanism puts binaries in Contents/MacOS,
+    // and LaunchServices treats any executable there as an app of its own: the
+    // bundled Node showed up in the Dock as a separate "exec" tile. From
+    // Resources it is just a file we execute.
+    let node = resource_dir.join("bin/node");
+    // Resource copying does not preserve the executable bit.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&node)?.permissions();
+        if perms.mode() & 0o111 == 0 {
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&node, perms)?;
+        }
+    }
     let data_dir = handle.path().app_data_dir()?;
     std::fs::create_dir_all(&data_dir)?;
 
@@ -116,7 +134,7 @@ fn start_backend(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Er
     let migrate = tauri::async_runtime::block_on(
         handle
             .shell()
-            .sidecar("node")?
+            .command(node.to_string_lossy().to_string())
             .args([app_dir.join("scripts/db-migrate.mjs").to_string_lossy().to_string()])
             .envs(vars.clone())
             .output(),
@@ -132,7 +150,7 @@ fn start_backend(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Er
     // 2. Serve.
     let (_rx, child) = handle
         .shell()
-        .sidecar("node")?
+        .command(node.to_string_lossy().to_string())
         .args([app_dir.join("server.js").to_string_lossy().to_string()])
         .envs(vars)
         .spawn()?;
