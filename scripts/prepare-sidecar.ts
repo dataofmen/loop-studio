@@ -74,6 +74,44 @@ function missingNodeMessage(): string {
 mkdirSync(outDir, { recursive: true });
 const dest = join(outDir, `node-${targetTriple()}`);
 
+const entitlements = join(root, "src-tauri/entitlements.plist");
+
+/**
+ * Signs the runtime ad-hoc, WITH the app's entitlements.
+ *
+ * V8 needs `allow-jit`/`allow-unsigned-executable-memory` to reserve its code
+ * range. Without them Node dies during `v8::Isolate::Initialize` with a
+ * FatalOOM ("Failed to reserve virtual memory for CodeRange") — but only once
+ * macOS is actually enforcing, which it does for a quarantined app launched
+ * through LaunchServices. Run the same binary from a terminal, or from a build
+ * you never downloaded, and it works: that gap let an unsigned-for-JIT runtime
+ * pass every local check and crash on the first real user.
+ *
+ * Tauri applies `bundle.macOS.entitlements` only to the bundle's own
+ * executables; a runtime shipped under Resources is left exactly as we leave
+ * it here, so this is the only place the entitlements can come from.
+ */
+function signForJit(path: string): void {
+  execFileSync("codesign", ["--force", "--sign", "-", "--entitlements", entitlements, path], {
+    stdio: ["ignore", "ignore", "ignore"],
+  });
+}
+
+/** The JIT entitlements actually present on a binary. */
+function jitEntitlements(path: string): string[] {
+  try {
+    const out = execFileSync("codesign", ["-d", "--entitlements", "-", path], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return ["allow-jit", "allow-unsigned-executable-memory", "disable-library-validation"].filter(
+      (k) => out.includes(k),
+    );
+  } catch {
+    return [];
+  }
+}
+
 /**
  * A prepared sidecar is reused as-is.
  *
@@ -92,8 +130,18 @@ if (existsSync(dest) && !process.env.LOOP_FORCE_SIDECAR) {
       ],
       { encoding: "utf8" },
     );
+    // A cached sidecar predating the entitlements fix must not ship as-is.
+    let ents = jitEntitlements(dest);
+    if (ents.length !== 3) {
+      signForJit(dest);
+      ents = jitEntitlements(dest);
+    }
     console.log(`sidecar → ${dest}`);
-    console.log(`  ${v} · 기존 사이드카 재사용 (${(statSync(dest).size / 1024 / 1024).toFixed(0)}MB)`);
+    console.log(
+      `  ${v} · 기존 사이드카 재사용 (${(statSync(dest).size / 1024 / 1024).toFixed(0)}MB) · ` +
+        `entitlements: ${ents.join(" ")}`,
+    );
+    if (ents.length !== 3) throw new Error(`JIT entitlements 서명 실패: ${dest}`);
     process.exit(0);
   } catch {
     // Present but not runnable — fall through and rebuild it from vendor/.
@@ -113,9 +161,7 @@ const before = statSync(dest).size;
 // Stripping invalidates the signature, and macOS SIGKILLs an unsigned-but-
 // modified Mach-O on sight — so re-sign ad-hoc immediately after.
 execFileSync("strip", ["-x", dest], { stdio: ["ignore", "ignore", "ignore"] });
-execFileSync("codesign", ["--force", "--sign", "-", dest], {
-  stdio: ["ignore", "ignore", "ignore"],
-});
+signForJit(dest);
 
 // Prove it still runs, and that what we need from it survived: node:sqlite
 // (persona corpus sampling) and TypeScript execution are both load-bearing.
@@ -128,10 +174,13 @@ const check = execFileSync(
   { encoding: "utf8" },
 );
 
+const ents = jitEntitlements(dest);
+if (ents.length !== 3) throw new Error(`JIT entitlements 서명 실패: ${dest} (${ents.join(" ")})`);
+
 const after = statSync(dest).size;
 const mb = (n: number) => (n / 1024 / 1024).toFixed(0);
 console.log(`sidecar → ${dest}`);
 console.log(
   `  ${check} · ${picked.built ? "locally built" : "official binary"} · ` +
-    `${mb(before)}MB → ${mb(after)}MB (stripped, ad-hoc signed)`,
+    `${mb(before)}MB → ${mb(after)}MB (stripped, ad-hoc signed, JIT entitled)`,
 );
