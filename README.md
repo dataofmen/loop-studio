@@ -14,6 +14,7 @@
 ## 설치 (앱)
 
 **[최신 버전 내려받기 →](https://github.com/dataofmen/loop-studio/releases/latest)**
+· [앱이 열리지 않을 때](#처음-실행하기)
 
 > ⚠️ **Apple Silicon(M1 이상) 전용입니다. Intel Mac에서는 실행되지 않습니다.**
 > 애플 메뉴  → `이 Mac에 관하여`의 칩 항목이 **Apple M1/M2/M3/M4** 인지 확인하세요.
